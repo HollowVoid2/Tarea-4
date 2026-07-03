@@ -6,15 +6,18 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <cmath>
-#include <memory>
+#include <queue>
+#include <set>
 
-// ============ FORWARD DECLARATIONS ============
+// ============ DECLARACIONES ADELANTADAS ============
 class MazeGenerator;
 
 // ============ ESTRUCTURAS ============
 struct Room {
     int x, y, w, h;
-    Room(int _x, int _y, int _w, int _h) : x(_x), y(_y), w(_w), h(_h) {}
+    int id;
+    Room(int _x, int _y, int _w, int _h, int _id = -1) 
+        : x(_x), y(_y), w(_w), h(_h), id(_id) {}
 };
 
 struct BSPNode {
@@ -42,6 +45,7 @@ const int MAZE_HEIGHT = 60;
 
 std::vector<std::vector<char>> grid;
 std::vector<Room*> rooms;
+std::vector<std::pair<int, int>> connections;
 
 float playerX = 2.0f;
 float playerY = 2.0f;
@@ -57,11 +61,11 @@ private:
     int minRoomSize;
     int maxRoomSize;
     int maxDepth;
+    int roomCounter;
     BSPNode* root;
     
     BSPNode* splitNode(BSPNode* node, int depth) {
-        // Primero verificar si el nodo es demasiado pequeño para dividir
-        if (depth >= maxDepth || node->w < minRoomSize * 2 || node->h < minRoomSize * 2) {
+        if (depth >= maxDepth || node->w < minRoomSize * 3 || node->h < minRoomSize * 3) {
             node->isLeaf = true;
             createRoom(node);
             return node;
@@ -69,7 +73,7 @@ private:
         
         bool splitH = (rand() % 2 == 0);
         
-        if (splitH && node->h >= minRoomSize * 2) {
+        if (splitH && node->h >= minRoomSize * 3) {
             int splitPos = node->y + node->h / 2 + (rand() % 3 - 1) * 2;
             if (splitPos > node->y + minRoomSize && splitPos < node->y + node->h - minRoomSize) {
                 node->left = new BSPNode(node->x, node->y, node->w, splitPos - node->y);
@@ -80,7 +84,7 @@ private:
             }
         }
         
-        if (!splitH && node->w >= minRoomSize * 2) {
+        if (!splitH && node->w >= minRoomSize * 3) {
             int splitPos = node->x + node->w / 2 + (rand() % 3 - 1) * 2;
             if (splitPos > node->x + minRoomSize && splitPos < node->x + node->w - minRoomSize) {
                 node->left = new BSPNode(node->x, node->y, splitPos - node->x, node->h);
@@ -91,97 +95,114 @@ private:
             }
         }
         
-        // Si no se pudo dividir, es hoja
         node->isLeaf = true;
         createRoom(node);
         return node;
     }
     
     void createRoom(BSPNode* node) {
-        // VALIDACIÓN: Asegurar que el nodo tiene espacio para una habitación
-        if (node->w < minRoomSize + 2 || node->h < minRoomSize + 2) {
-            // Nodo demasiado pequeño para una habitación
+        if (node->w < minRoomSize + 3 || node->h < minRoomSize + 3) {
             return;
         }
         
-        // Calcular tamaño máximo de habitación seguro
-        int maxRoomW = std::min(node->w - 2, maxRoomSize);
-        int maxRoomH = std::min(node->h - 2, maxRoomSize);
+        int maxRoomW = std::min(node->w - 3, maxRoomSize + 3);
+        int maxRoomH = std::min(node->h - 3, maxRoomSize + 3);
         
-        // Asegurar que hay espacio para la habitación
         if (maxRoomW < minRoomSize || maxRoomH < minRoomSize) {
             return;
         }
         
-        // Calcular tamaño de la habitación (con validación)
         int roomW = minRoomSize + (rand() % (maxRoomW - minRoomSize + 1));
         int roomH = minRoomSize + (rand() % (maxRoomH - minRoomSize + 1));
         
-        // Asegurar que roomW y roomH son válidos
+        if (rand() % 3 == 0) {
+            roomW = maxRoomW;
+            roomH = maxRoomH;
+        }
+        
         roomW = std::max(minRoomSize, std::min(roomW, maxRoomW));
         roomH = std::max(minRoomSize, std::min(roomH, maxRoomH));
         
-        // Calcular posición (con validación)
         int maxX = node->x + node->w - roomW - 1;
         int maxY = node->y + node->h - roomH - 1;
         
         if (maxX <= node->x + 1 || maxY <= node->y + 1) {
-            return; // No hay espacio para la habitación
+            return;
         }
         
         int roomX = node->x + 1 + (rand() % (maxX - node->x));
         int roomY = node->y + 1 + (rand() % (maxY - node->y));
         
-        // Crear habitación
-        Room* newRoom = new Room(roomX, roomY, roomW, roomH);
+        Room* newRoom = new Room(roomX, roomY, roomW, roomH, roomCounter++);
         rooms.push_back(newRoom);
         node->room = newRoom;
     }
     
-    void connectRooms() {
+    // Funcion auxiliar para obtener una habitacion aleatoria de un subarbol
+    Room* getRandomRoomFromNode(BSPNode* node) {
+        if (!node) return nullptr;
+        if (node->isLeaf && node->room) return node->room;
+        
+        // Buscar en los hijos de forma aleatoria
+        if (rand() % 2 == 0) {
+            Room* r = getRandomRoomFromNode(node->left);
+            return r ? r : getRandomRoomFromNode(node->right);
+        } else {
+            Room* r = getRandomRoomFromNode(node->right);
+            return r ? r : getRandomRoomFromNode(node->left);
+        }
+    }
+    
+    // Conexion organica estilo BSP
+    void connectSiblings(BSPNode* node) {
+        if (!node || node->isLeaf) return;
+        
+        // Ir hasta el fondo del arbol primero (post-order)
+        connectSiblings(node->left);
+        connectSiblings(node->right);
+        
+        // Al regresar, conectar el subarbol izquierdo con el derecho
+        if (node->left && node->right) {
+            Room* r1 = getRandomRoomFromNode(node->left);
+            Room* r2 = getRandomRoomFromNode(node->right);
+            
+            if (r1 && r2) {
+                connectTwoRooms(r1, r2);
+                connections.push_back({r1->id, r2->id});
+            }
+        }
+    }
+    
+    // Conexion mejorada
+    void connectAllRooms() {
         if (rooms.size() < 2) return;
         
-        connectNodes(root);
+        // Usar solo la conexion organica del arbol BSP
+        connectSiblings(root);
         
-        for (int i = 0; i < rooms.size() * 0.3; i++) {
+        // Conexiones extra aleatorias para mas caminos
+        int extraConnections = rooms.size() * 0.2;
+        for (int i = 0; i < extraConnections; i++) {
             int r1 = rand() % rooms.size();
             int r2 = rand() % rooms.size();
-            if (r1 != r2) {
+            if (r1 != r2 && !areRoomsConnected(r1, r2)) {
                 connectTwoRooms(rooms[r1], rooms[r2]);
+                connections.push_back({r1, r2});
             }
         }
     }
     
-    void connectNodes(BSPNode* node) {
-        if (!node) return;
-        
-        if (node->left && node->right) {
-            if (node->left->room && node->right->room) {
-                connectTwoRooms(node->left->room, node->right->room);
+    bool areRoomsConnected(int id1, int id2) {
+        for (auto& conn : connections) {
+            if ((conn.first == id1 && conn.second == id2) ||
+                (conn.first == id2 && conn.second == id1)) {
+                return true;
             }
         }
-        
-        connectNodes(node->left);
-        connectNodes(node->right);
+        return false;
     }
     
-    void connectTwoRooms(Room* r1, Room* r2) {
-        if (!r1 || !r2) return;
-        
-        int cx1 = r1->x + r1->w / 2;
-        int cy1 = r1->y + r1->h / 2;
-        int cx2 = r2->x + r2->w / 2;
-        int cy2 = r2->y + r2->h / 2;
-        
-        if (rand() % 2 == 0) {
-            createHorizontalCorridor(cx1, cx2, cy1);
-            createVerticalCorridor(cy1, cy2, cx2);
-        } else {
-            createVerticalCorridor(cy1, cy2, cx1);
-            createHorizontalCorridor(cx1, cx2, cy2);
-        }
-    }
-    
+    // Funciones de pasillos con tamaño fijo de 1 celda
     void createHorizontalCorridor(int x1, int x2, int y) {
         int start = std::min(x1, x2);
         int end = std::max(x1, x2);
@@ -202,6 +223,24 @@ private:
         }
     }
     
+    void connectTwoRooms(Room* r1, Room* r2) {
+        if (!r1 || !r2) return;
+        
+        int cx1 = r1->x + r1->w / 2;
+        int cy1 = r1->y + r1->h / 2;
+        int cx2 = r2->x + r2->w / 2;
+        int cy2 = r2->y + r2->h / 2;
+        
+        // Pasillo fijo de ancho 1
+        if (rand() % 2 == 0) {
+            createHorizontalCorridor(cx1, cx2, cy1);
+            createVerticalCorridor(cy1, cy2, cx2);
+        } else {
+            createVerticalCorridor(cy1, cy2, cx1);
+            createHorizontalCorridor(cx1, cx2, cy2);
+        }
+    }
+    
     void carveRooms() {
         for (Room* room : rooms) {
             for (int y = room->y; y < room->y + room->h; y++) {
@@ -216,28 +255,29 @@ private:
     
 public:
     MazeGenerator(int _width, int _height) 
-        : width(_width), height(_height), minRoomSize(4), maxRoomSize(10), maxDepth(10), root(nullptr) {
+        : width(_width), height(_height), minRoomSize(6), maxRoomSize(15), 
+          maxDepth(8), roomCounter(0), root(nullptr) {
         grid.resize(height, std::vector<char>(width, '#'));
         srand(time(nullptr));
     }
     
     void generate() {
         clearMap();
+        connections.clear();
         
         if (grid.empty() || grid[0].empty()) {
             grid.resize(height, std::vector<char>(width, '#'));
         }
         
-        // Verificar que el espacio sea suficiente
         if (width < minRoomSize * 4 || height < minRoomSize * 4) {
-            std::cerr << "Error: El mapa es demasiado pequeño para generar habitaciones" << std::endl;
+            std::cerr << "Error: El mapa es demasiado pequeno" << std::endl;
             return;
         }
         
         root = new BSPNode(1, 1, width - 2, height - 2);
         splitNode(root, 0);
         carveRooms();
-        connectRooms();
+        connectAllRooms();
         
         if (!rooms.empty()) {
             playerX = rooms[0]->x + rooms[0]->w / 2.0f;
@@ -248,7 +288,8 @@ public:
             std::cerr << "Advertencia: No se generaron habitaciones" << std::endl;
         }
         
-        std::cout << "Habitaciones generadas: " << rooms.size() << std::endl;
+        std::cout << "Habitaciones: " << rooms.size() 
+                  << " | Conexiones: " << connections.size() << std::endl;
     }
     
     void clearMap() {
@@ -267,6 +308,7 @@ public:
             delete room;
         }
         rooms.clear();
+        roomCounter = 0;
     }
     
     ~MazeGenerator() {
@@ -329,7 +371,6 @@ void drawPlayer(float x, float y) {
     float cellW = (float)WINDOW_WIDTH / mazeWidth;
     float cellH = (float)WINDOW_HEIGHT / mazeHeight;
     
-    // Limitar posición del jugador al mapa
     x = std::max(0.5f, std::min((float)mazeWidth - 0.5f, x));
     y = std::max(0.5f, std::min((float)mazeHeight - 0.5f, y));
     
@@ -359,6 +400,23 @@ void drawPlayer(float x, float y) {
     glVertex2f(posX + cellW/2 + size*0.2f + eyeSize, posY + cellH/2 + size*0.1f + eyeSize);
     glVertex2f(posX + cellW/2 + size*0.2f, posY + cellH/2 + size*0.1f + eyeSize);
     glEnd();
+    
+    // Indicador de direccion
+    glColor3f(1.0f, 1.0f, 0.0f);
+    glBegin(GL_TRIANGLES);
+    float dirX = (keys[3] ? 1 : 0) - (keys[1] ? 1 : 0);
+    float dirY = (keys[0] ? 1 : 0) - (keys[2] ? 1 : 0);
+    if (dirX != 0 || dirY != 0) {
+        float len = sqrt(dirX*dirX + dirY*dirY);
+        dirX /= len;
+        dirY /= len;
+        glVertex2f(posX + cellW/2 + dirX * size * 0.6f, posY + cellH/2 + dirY * size * 0.6f);
+        glVertex2f(posX + cellW/2 + dirX * size * 0.2f - dirY * size * 0.2f, 
+                   posY + cellH/2 + dirY * size * 0.2f + dirX * size * 0.2f);
+        glVertex2f(posX + cellW/2 + dirX * size * 0.2f + dirY * size * 0.2f,
+                   posY + cellH/2 + dirY * size * 0.2f - dirX * size * 0.2f);
+    }
+    glEnd();
 }
 
 // ============ MOVIMIENTO Y COLISIONES ============
@@ -384,10 +442,11 @@ void updatePlayer(float deltaTime) {
     float newY = playerY;
     float moveDist = playerSpeed * deltaTime;
     
-    if (keys[0]) newY += moveDist;
-    if (keys[1]) newX -= moveDist;
-    if (keys[2]) newY -= moveDist;
-    if (keys[3]) newX += moveDist;
+    // Eje Y: W = arriba, S = abajo
+    if (keys[0]) newY -= moveDist; // W - Arriba
+    if (keys[1]) newX -= moveDist; // A - Izquierda
+    if (keys[2]) newY += moveDist; // S - Abajo
+    if (keys[3]) newX += moveDist; // D - Derecha
     
     if (canMove(newX, playerY)) {
         playerX = newX;
@@ -428,7 +487,7 @@ int main() {
     
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, 
-                                          "Mazmorra BSP - Corregido", 
+                                          "Mazmorra BSP - Estilo BSP", 
                                           nullptr, nullptr);
     
     if (!window) {
@@ -454,12 +513,12 @@ int main() {
     
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     
-    std::cout << "=== MAZMORRA BSP - VERSIÓN CORREGIDA ===" << std::endl;
+    std::cout << "=== MAZMORRA BSP - CONEXION ESTILO BSP ===" << std::endl;
     std::cout << "Controles:" << std::endl;
     std::cout << "  WASD - Moverse" << std::endl;
     std::cout << "  R    - Regenerar mapa" << std::endl;
     std::cout << "  ESC  - Salir" << std::endl;
-    std::cout << "=========================================" << std::endl;
+    std::cout << "===========================================" << std::endl;
     
     MazeGenerator generator(MAZE_WIDTH, MAZE_HEIGHT);
     g_generator = &generator;
@@ -480,8 +539,8 @@ int main() {
         drawPlayer(playerX, playerY);
         
         char title[100];
-        sprintf(title, "Mazmorra BSP - Habitaciones: %zu - Jugador (%.1f, %.1f)", 
-                rooms.size(), playerX, playerY);
+        sprintf(title, "Mazmorra BSP - Habitaciones: %zu - Conexiones: %zu", 
+                rooms.size(), connections.size());
         glfwSetWindowTitle(window, title);
         
         glfwSwapBuffers(window);
