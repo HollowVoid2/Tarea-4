@@ -60,7 +60,7 @@ private:
     BSPNode* root;
     
     BSPNode* splitNode(BSPNode* node, int depth) {
-        // ✅ Primero verificar si el nodo es demasiado pequeño para dividir
+        // Primero verificar si el nodo es demasiado pequeño para dividir
         if (depth >= maxDepth || node->w < minRoomSize * 2 || node->h < minRoomSize * 2) {
             node->isLeaf = true;
             createRoom(node);
@@ -98,30 +98,30 @@ private:
     }
     
     void createRoom(BSPNode* node) {
-        // ✅ VALIDACIÓN: Asegurar que el nodo tiene espacio para una habitación
+        // VALIDACIÓN: Asegurar que el nodo tiene espacio para una habitación
         if (node->w < minRoomSize + 2 || node->h < minRoomSize + 2) {
             // Nodo demasiado pequeño para una habitación
             return;
         }
         
-        // ✅ Calcular tamaño máximo de habitación seguro
+        // Calcular tamaño máximo de habitación seguro
         int maxRoomW = std::min(node->w - 2, maxRoomSize);
         int maxRoomH = std::min(node->h - 2, maxRoomSize);
         
-        // ✅ Asegurar que hay espacio para la habitación
+        // Asegurar que hay espacio para la habitación
         if (maxRoomW < minRoomSize || maxRoomH < minRoomSize) {
             return;
         }
         
-        // ✅ Calcular tamaño de la habitación (con validación)
+        // Calcular tamaño de la habitación (con validación)
         int roomW = minRoomSize + (rand() % (maxRoomW - minRoomSize + 1));
         int roomH = minRoomSize + (rand() % (maxRoomH - minRoomSize + 1));
         
-        // ✅ Asegurar que roomW y roomH son válidos
+        // Asegurar que roomW y roomH son válidos
         roomW = std::max(minRoomSize, std::min(roomW, maxRoomW));
         roomH = std::max(minRoomSize, std::min(roomH, maxRoomH));
         
-        // ✅ Calcular posición (con validación)
+        // Calcular posición (con validación)
         int maxX = node->x + node->w - roomW - 1;
         int maxY = node->y + node->h - roomH - 1;
         
@@ -132,7 +132,7 @@ private:
         int roomX = node->x + 1 + (rand() % (maxX - node->x));
         int roomY = node->y + 1 + (rand() % (maxY - node->y));
         
-        // ✅ Crear habitación
+        // Crear habitación
         Room* newRoom = new Room(roomX, roomY, roomW, roomH);
         rooms.push_back(newRoom);
         node->room = newRoom;
@@ -228,7 +228,7 @@ public:
             grid.resize(height, std::vector<char>(width, '#'));
         }
         
-        // ✅ Verificar que el espacio sea suficiente
+        // Verificar que el espacio sea suficiente
         if (width < minRoomSize * 4 || height < minRoomSize * 4) {
             std::cerr << "Error: El mapa es demasiado pequeño para generar habitaciones" << std::endl;
             return;
@@ -329,7 +329,7 @@ void drawPlayer(float x, float y) {
     float cellW = (float)WINDOW_WIDTH / mazeWidth;
     float cellH = (float)WINDOW_HEIGHT / mazeHeight;
     
-    // ✅ Limitar posición del jugador al mapa
+    // Limitar posición del jugador al mapa
     x = std::max(0.5f, std::min((float)mazeWidth - 0.5f, x));
     y = std::max(0.5f, std::min((float)mazeHeight - 0.5f, y));
     
